@@ -28,7 +28,7 @@ config = types.GenerateContentConfig(temperature=0.7)
 # --- AIに名前を提案させる関数 ---
 def propose_name_from_image(image_data, mime_type, model_client, generation_config):
     contents = []
-    text_prompt = """あなたは優秀なコピーライターです。この画像に映るものに名前を付けてください。
+    text_prompt = text_prompt = """あなたは優秀なコピーライターです。この画像に映るものに名前を付けてください。
 #要望
 ・最も適切でユニークでかつクールな名前。一つ厳選し提案してください。
 ・その名前にした理由も簡潔に教えてください。
@@ -61,7 +61,7 @@ def propose_name_from_image(image_data, mime_type, model_client, generation_conf
     return ai_response_text
 
 # --- Streamlit UI 部分 ---
-st.title("ザ・AI命名 (Streamlit版)")
+st.title("ザ・AI命名 Ver2.0")
 st.write("アップロードした画像をみて...AIが名前を付けますよ！")
 
 # --- session_state の初期化 ---
@@ -71,27 +71,23 @@ if "uploaded_image_data" not in st.session_state:
     st.session_state.uploaded_image_data = None
 if "uploaded_image_type" not in st.session_state:
     st.session_state.uploaded_image_type = None
-if "run_ai_on_next_rerun" not in st.session_state:
-    st.session_state.run_ai_on_next_rerun = False
-if "processing_message_placeholder" not in st.session_state:
-    st.session_state.processing_message_placeholder = None # メッセージ表示用プレースホルダー
-
+if "uploader_key" not in st.session_state:
+    st.session_state.uploader_key = 0
 
 # ファイルアップローダー
-new_uploaded_file = st.file_uploader("画像を指定してください。AIが名前を付けます♪", type=["jpg", "jpeg", "png"])
+# uploaded_file = st.file_uploader("画像を指定してください", type=["jpg", "jpeg", "png"])
+uploaded_file = st.file_uploader("画像をアップロードしてください。", type=["jpg", "jpeg", "png"], key=st.session_state.uploader_key)
 
 # 新しいファイルがアップロードされた場合
-if new_uploaded_file is not None:
-    # 現在のセッションのファイルデータと異なる場合、新しいファイルを処理
+if uploaded_file is not None:
+    # 新しいファイルの場合のみ、セッションに保存
     if st.session_state.uploaded_image_data is None or \
-       st.session_state.uploaded_image_data != new_uploaded_file.getvalue():
+       st.session_state.uploaded_image_data != uploaded_file.getvalue():
         
-        st.session_state.uploaded_image_data = new_uploaded_file.getvalue()
-        st.session_state.uploaded_image_type = new_uploaded_file.type
-        st.session_state.ai_response_text = "" # 新しいファイルなのでAI応答をリセット
-        st.session_state.run_ai_on_next_rerun = True # 次の再実行でAIを動かす
-        st.session_state.processing_message_placeholder = None # メッセージプレースホルダーをリセット
-        st.rerun() # セッション状態の更新を反映させるために強制的に再実行
+        st.session_state.uploaded_image_data = uploaded_file.getvalue()
+        st.session_state.uploaded_image_type = uploaded_file.type
+        st.session_state.ai_response_text = ""
+        st.rerun()
 
 # --- 画像とボタン、AI応答の表示 ---
 if st.session_state.uploaded_image_data is not None:
@@ -99,52 +95,42 @@ if st.session_state.uploaded_image_data is not None:
     image = Image.open(io.BytesIO(st.session_state.uploaded_image_data))
     st.image(image, caption='アップロードされた画像', width=200)
 
-    # メッセージ表示用プレースホルダー
-    if st.session_state.processing_message_placeholder is None:
-        st.session_state.processing_message_placeholder = st.empty()
-
-    # AI推論を実行する必要がある場合
-    if st.session_state.run_ai_on_next_rerun:
-        st.session_state.processing_message_placeholder.info("AIが名前を提案中です。しばらくお待ちください...")
-        st.session_state.run_ai_on_next_rerun = False # フラグをリセット
-        
-        with st.spinner("思考中..."): # ここに表示したいメッセージ
-            try:
-                ai_response = propose_name_from_image(
-                    st.session_state.uploaded_image_data, 
-                    st.session_state.uploaded_image_type, 
-                    client, 
-                    config
-                )
-                st.session_state.ai_response_text = ai_response # 結果をセッション状態に保存
-                st.session_state.processing_message_placeholder.success("命名しました！") # 成功メッセージ
-            
-            except Exception as e:
-                st.session_state.processing_message_placeholder.error("エラーが発生しました。") # エラーメッセージ
-                st.error(f"AIとの通信中にエラーが発生しました: {e}")
-                st.write("APIキーの設定、またはGemini APIの利用制限を確認してください。")
-                st.write(f"詳細: {e}")
-                st.session_state.ai_response_text = "エラーにより名前を生成できませんでした。" # エラーメッセージを保存
+    # --- 「命名する」ボタンとAI推論のロジック ---
+    col1, col2 = st.columns(2)
+    with col1:
+        # このボタンを押した時のみAI推論を実行
+        if st.button("命名しよう♪", key="propose_name_button"):
+            # st.info("AIが名前を提案中です。しばらくお待ちください...")
+            with st.spinner("AIが命名中です..."):
+                try:
+                    ai_response = propose_name_from_image(
+                        st.session_state.uploaded_image_data, 
+                        st.session_state.uploaded_image_type, 
+                        client, 
+                        config
+                    )
+                    st.session_state.ai_response_text = ai_response
+                    st.success("命名しました！")
+                except Exception as e:
+                    st.error(f"AIとの通信中にエラーが発生しました: {e}")
+                    st.write("APIキーの設定、またはGemini APIの利用制限を確認してください。")
+                    st.session_state.ai_response_text = "エラーにより名前を生成できませんでした。"
 
     # 保存されたAIの応答があれば表示
     if st.session_state.ai_response_text:
         st.subheader("AIが提案した名前:")
         st.write(st.session_state.ai_response_text)
-        
-        # --- 名前再提案ボタンをAI応答結果の下に配置 ---
-        st.markdown("---") # 区切り線
-        if st.button("別の名前を提案してもらう", key="re_propose_button_after_response"):
-            st.session_state.run_ai_on_next_rerun = True # ボタンが押されたのでAIを動かす
-            st.rerun() # AIを動かすための再実行
-            
-else:
-    # ファイルがまだアップロードされていない場合、セッション状態をリセットして初期表示
-    st.session_state.uploaded_image_data = None
-    st.session_state.uploaded_image_type = None
-    st.session_state.ai_response_text = ""
-    st.session_state.run_ai_on_next_rerun = False
-    st.session_state.processing_message_placeholder = None
-    st.info("画像をアップロードしてください。")
+    
+    with col2:
+        # --- 「クリア」ボタンの配置 ---
+        if st.button("クリア", key="clear_button"):
+            # st.session_state の特定のキーのみをリセット
+            st.session_state.uploaded_image_data = None
+            st.session_state.uploaded_image_type = None
+            st.session_state.ai_response_text = ""
+            # ファイルアップローダーをリセットするためにキーを更新
+            st.session_state.uploader_key += 1
+            st.rerun()
 
-# --- クリアボタンはまだなし ---
-# 後ほどここにシンプルに実装します
+else:
+    st.info("画像をアップロードしてください。")
